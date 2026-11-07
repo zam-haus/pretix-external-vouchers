@@ -14,8 +14,6 @@ msgstr ""
 msgid "External Vouchers"
 msgstr "Externe Gutscheine"
 
-msgid "Payment method for external vouchers: asks a question during checkout, records the answer on the payment, extends the payment deadline until the end of the event and marks the order as valid before payment. Also hides the built-in 'Redeem a voucher' box."
-msgstr "Zahlungsart für externe Gutscheine: stellt beim Bezahlvorgang eine Frage, speichert die Antwort an der Zahlung, verlängert die Zahlungsfrist bis zum Ende der Veranstaltung und markiert die Bestellung schon vor der Zahlung als gültig. Blendet außerdem das eingebaute Feld „Gutschein einlösen“ aus."
 
 msgid "External voucher"
 msgstr "Externer Gutschein"
@@ -34,3 +32,27 @@ msgstr "Hilfetext zur Frage"
 
 msgid "Answer is required"
 msgstr "Antwort ist erforderlich"
+
+msgid "Payment method for external vouchers: asks a question during checkout, checks the answer's format, records the answer on the payment, marks the order as confirmed (valid if pending) and extends the payment deadline until the end of the event. Also hides the built-in 'Redeem a voucher' box."
+msgstr "Zahlungsart für externe Gutscheine: stellt beim Bezahlvorgang eine Frage, prüft das Format der Antwort, speichert die Antwort an der Zahlung, markiert die Bestellung als bestätigt (gültig, auch wenn noch nicht bezahlt) und verlängert die Zahlungsfrist bis zum Ende der Veranstaltung. Blendet außerdem das eingebaute Feld „Gutschein einlösen“ aus."
+
+msgid "Invalid regular expression: %s"
+msgstr "Ungültiger regulärer Ausdruck: %s"
+
+msgid "Your answer does not have the expected format."
+msgstr "Ihre Antwort hat nicht das erwartete Format."
+
+msgid "Create an invoice for orders using this payment method immediately if the event is otherwise configured to create invoices after payment is completed."
+msgstr "Rechnung für Bestellungen mit dieser Zahlungsart sofort erstellen, auch wenn die Veranstaltung sonst so eingestellt ist, dass Rechnungen erst nach Zahlungseingang erstellt werden."
+
+msgid "Required answer format (regular expression)"
+msgstr "Erforderliches Antwortformat (regulärer Ausdruck)"
+
+msgid "The whole answer has to match this regular expression. Leave empty to accept any answer. Default: %(default)s"
+msgstr "Die gesamte Antwort muss diesem regulären Ausdruck entsprechen. Leer lassen, um jede Antwort zu akzeptieren. Standard: %(default)s"
+
+msgid "Error message if the answer has the wrong format"
+msgstr "Fehlermeldung bei falschem Antwortformat"
+
+msgid "For example: 'Please enter the code in the form XXX-XXX-XXX.'"
+msgstr "Zum Beispiel: „Bitte geben Sie den Code im Format XXX-XXX-XXX ein.“"

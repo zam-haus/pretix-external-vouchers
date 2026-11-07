@@ -11,8 +11,9 @@ from pretix_external_vouchers.payment import (
     IDENTIFIER,
     META_KEY,
     ExternalVoucherPayment,
+    validate_regex,
 )
-from pretix_external_vouchers.signals import hide_voucher_redemption, valid_if_pending
+from pretix_external_vouchers.signals import hide_voucher_redemption
 
 PLUGINS = "pretix.plugins.manualpayment,pretix_external_vouchers"
 
@@ -83,12 +84,6 @@ def _order(event, item, provider, meta=None, subevents=(None,)):
     return Order.objects.get()
 
 
-def test_valid_if_pending_signal():
-    assert valid_if_pending(None, payments=_payment(IDENTIFIER))
-    assert not valid_if_pending(None, payments=_payment("manual"))
-    assert not valid_if_pending(None, payments=[])
-
-
 @pytest.mark.django_db
 def test_provider_is_registered_and_not_implicit(event):
     prov = event.get_payment_providers()[IDENTIFIER]
@@ -122,13 +117,23 @@ def test_order_with_other_provider_untouched(event, item):
         assert order.expires < event.date_from
 
 
+def _end_of_next_day(dt, event):
+    tz = event.timezone
+    day = dt.astimezone(tz).date() + datetime.timedelta(days=1)
+    return datetime.datetime.combine(day, datetime.time(23, 59, 59), tzinfo=tz)
+
+
 @pytest.mark.django_db
-def test_event_end_falls_back_to_start(event, item):
+@pytest.mark.parametrize("tz", ["UTC", "Europe/Berlin"])
+def test_event_without_end_uses_day_after_start(event, item, tz):
     with scopes_disabled():
+        event.settings.timezone = tz
         event.date_to = None
         event.save()
+        event = Event.objects.get(pk=event.pk)
         order = _order(event, item, IDENTIFIER, {META_KEY: "X"})
-        assert order.expires == event.date_from
+        assert order.expires == _end_of_next_day(event.date_from, event)
+        assert order.expires > event.date_from
 
 
 def _series(event, item, *dates):
@@ -169,7 +174,7 @@ def test_event_end_series_without_end_date(event, item):
     with scopes_disabled():
         (se1,) = _series(event, item, (d + datetime.timedelta(days=5), None))
         order = _order(event, item, IDENTIFIER, {META_KEY: "X"}, subevents=[se1])
-        assert order.expires == se1.date_from
+        assert order.expires == _end_of_next_day(se1.date_from, event)
 
 
 @pytest.mark.django_db
@@ -245,7 +250,7 @@ def _checkout(client, event, item, data):
 @pytest.mark.parametrize(
     "data,ours",
     [
-        ({"payment": IDENTIFIER, f"payment_{IDENTIFIER}-answer": "ABC-123"}, True),
+        ({"payment": IDENTIFIER, f"payment_{IDENTIFIER}-answer": "AB1-c2D-3EF"}, True),
         ({"payment": "manual"}, False),
     ],
 )
@@ -264,7 +269,208 @@ def test_checkout_side_by_side_with_manual_payment(event, item, client, data, ou
         assert order.valid_if_pending is ours
         if ours:
             assert order.expires == event.date_to
-            assert payment.info_data["answer"] == "ABC-123"
+            assert payment.info_data["answer"] == "AB1-c2D-3EF"
         else:
             assert order.expires < event.date_from
             assert "answer" not in payment.info_data
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "answer,ok",
+    [
+        ("AB1-c2D-3EF", True),
+        ("ABC-123", False),
+        ("ABC-123-XYZ-000", False),
+        (" ABC-123-XYZ", False),
+        ("ABC_123_XYZ", False),
+        ("ÄBC-123-XYZ", False),
+    ],
+)
+def test_answer_format_default(event, answer, ok):
+    from django.core.exceptions import ValidationError
+
+    prov = event.get_payment_providers()[IDENTIFIER]
+    if ok:
+        prov.validate_answer(answer)
+    else:
+        with pytest.raises(ValidationError):
+            prov.validate_answer(answer)
+
+
+@pytest.mark.django_db
+def test_answer_format_configurable(event):
+    from django.core.exceptions import ValidationError
+
+    event.settings.set(f"payment_{IDENTIFIER}_answer_regex", "")
+    event.settings.set(f"payment_{IDENTIFIER}_answer_regex_error", "Use XXX-XXX-XXX")
+    prov = event.get_payment_providers()[IDENTIFIER]
+    prov.validate_answer("anything goes")
+
+    event.settings.set(f"payment_{IDENTIFIER}_answer_regex", r"\d{4}")
+    prov = event.get_payment_providers()[IDENTIFIER]
+    prov.validate_answer("1234")
+    with pytest.raises(ValidationError, match="Use XXX-XXX-XXX"):
+        prov.validate_answer("12345")
+
+
+def test_invalid_regex_is_rejected_in_settings():
+    from django.core.exceptions import ValidationError
+
+    validate_regex("")
+    validate_regex(r"[0-9]{3}")
+    with pytest.raises(ValidationError):
+        validate_regex("[0-9")
+
+
+@pytest.mark.django_db
+def test_settings_form(event):
+    prov = event.get_payment_providers()[IDENTIFIER]
+    fields = prov.settings_form_fields
+    assert "bank transfer" not in str(fields["invoice_immediately"].label)
+    assert (
+        fields["answer_regex"].initial
+        == r"[0-9a-zA-Z]{3}-[0-9a-zA-Z]{3}-[0-9a-zA-Z]{3}"
+    )
+
+
+@pytest.mark.django_db
+def test_checkout_rejects_wrong_format(event, item, client):
+    event.settings.set("attendee_names_asked", False)
+    _checkout(
+        client,
+        event,
+        item,
+        {"payment": IDENTIFIER, f"payment_{IDENTIFIER}-answer": "ABC-123"},
+    )
+    with scopes_disabled():
+        assert not Order.objects.exists()
+
+
+@pytest.mark.django_db
+def test_switching_to_other_method_unconfirms(event, item):
+    from django.db import transaction
+    from pretix.base.services.orders import change_payment_provider
+
+    event.settings.set("payment_manual__enabled", True)
+    with scopes_disabled():
+        order = _order(event, item, IDENTIFIER, {META_KEY: "AB1-C2D-3EF"})
+        assert order.expires == event.date_to
+        assert order.valid_if_pending
+        manual = event.get_payment_providers()["manual"]
+        with transaction.atomic():
+            change_payment_provider(order, manual)
+        order.refresh_from_db()
+        assert not order.valid_if_pending
+        assert order.expires < event.date_from
+        assert (
+            order.all_logentries()
+            .filter(action_type="pretix.event.order.valid_if_pending.unset")
+            .exists()
+        )
+        assert order.payments.get(provider=IDENTIFIER).state == "canceled"
+        assert order.payments.filter(provider="manual").exists()
+
+
+@pytest.mark.django_db
+def test_canceling_payment_in_backend_unconfirms(event, item):
+    with scopes_disabled():
+        order = _order(event, item, IDENTIFIER, {META_KEY: "AB1-C2D-3EF"})
+        payment = order.payments.get()
+        payment.payment_provider.cancel_payment(payment)
+        order.refresh_from_db()
+        assert not order.valid_if_pending
+        assert order.expires < event.date_from
+
+
+@pytest.mark.django_db
+def test_order_requiring_approval_is_not_confirmed(event, item):
+    with scopes_disabled():
+        item.require_approval = True
+        item.save()
+        order = _order(event, item, IDENTIFIER, {META_KEY: "AB1-C2D-3EF"})
+        assert order.require_approval
+        assert not order.payments.exists()
+        assert not order.valid_if_pending
+
+
+@pytest.mark.django_db
+def test_order_page_shows_confirmed(event, item, client):
+    with scopes_disabled():
+        order = _order(event, item, IDENTIFIER, {META_KEY: "AB1-C2D-3EF"})
+    r = client.get(f"/zam/event/order/{order.code}/{order.secret}/")
+    html = r.content.decode()
+    assert "Confirmed" in html
+    assert "Payment pending" not in html
+
+
+@pytest.mark.django_db
+def test_answer_shown_to_customer(event, item):
+    from django.core import mail
+
+    event.settings.set(f"payment_{IDENTIFIER}_email_instructions", "Bring the voucher.")
+    with scopes_disabled():
+        order = _order(event, item, IDENTIFIER, {META_KEY: "AB1-C2D-3EF"})
+        payment = order.payments.get()
+        html = payment.payment_provider.payment_pending_render(None, payment)
+        assert "Voucher number?" in html and "AB1-C2D-3EF" in html
+
+        # order confirmation mail
+        assert len(mail.outbox) == 1
+        body = mail.outbox[0].body
+        assert "Bring the voucher." in body
+        assert "Voucher number?: AB1-C2D-3EF" in body
+        html_mail = "".join(
+            part.get_payload(decode=True).decode()
+            for part in mail.outbox[0].alternatives[0][0].walk()
+            if part.get_content_type() == "text/html"
+        )
+        assert "AB1-C2D-3EF" in html_mail
+        assert "AB1\\-C2D" not in html_mail
+
+
+@pytest.mark.django_db
+def test_order_page_shows_answer(event, item, client):
+    with scopes_disabled():
+        order = _order(event, item, IDENTIFIER, {META_KEY: "AB1-C2D-3EF"})
+    r = client.get(f"/zam/event/order/{order.code}/{order.secret}/")
+    assert r.status_code == 200
+    html = r.content.decode()
+    assert "Voucher number?" in html and "AB1-C2D-3EF" in html
+
+
+@pytest.mark.django_db
+def test_no_reminder_mail_by_default(event, item):
+    with scopes_disabled():
+        order = _order(event, item, IDENTIFIER, {META_KEY: "AB1-C2D-3EF"})
+        payment = order.payments.get()
+        prov = payment.payment_provider
+        assert prov.prevent_reminder_mail(order, payment)
+        assert prov.settings_form_fields["_prevent_reminder_mail"].initial is True
+        event.settings.set(f"payment_{IDENTIFIER}__prevent_reminder_mail", False)
+        prov = event.get_payment_providers()[IDENTIFIER]
+        assert not prov.prevent_reminder_mail(order, payment)
+
+
+@pytest.mark.django_db
+def test_widget_hides_voucher_field(event, item, client):
+    with scopes_disabled():
+        event.vouchers.create(code="ABC")
+    r = client.get("/zam/event/widget/product_list")
+    assert r.status_code == 200
+    assert r.json()["vouchers_exist"] is False
+
+    # Sanity check: without the plugin, pretix would show the field
+    event.plugins = "pretix.plugins.manualpayment"
+    event.save()
+    from django.core.cache import cache
+
+    cache.clear()
+    r = client.get("/zam/event/widget/product_list")
+    assert r.json()["vouchers_exist"] is True
+
+
+@pytest.mark.django_db
+def test_html_head_includes_script_fallback(event):
+    html = hide_voucher_redemption(event, request=RequestFactory().get("/"))
+    assert "pretix_external_vouchers/hide_vouchers.js" in html

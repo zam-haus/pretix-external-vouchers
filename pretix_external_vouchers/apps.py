@@ -18,9 +18,9 @@ class PluginApp(PluginConfig):
         author = "Julian Hammer"
         description = gettext_lazy(
             "Payment method for external vouchers: asks a question during checkout, "
-            "records the answer on the payment, extends the payment deadline until "
-            "the end of the event and marks the order as valid before payment. "
-            "Also hides the built-in 'Redeem a voucher' box."
+            "checks the answer's format, records the answer on the payment, marks the "
+            "order as confirmed (valid if pending) and extends the payment deadline "
+            "until the end of the event. Also hides the built-in 'Redeem a voucher' box."
         )
         visible = True
         version = __version__

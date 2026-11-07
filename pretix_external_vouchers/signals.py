@@ -1,19 +1,20 @@
+import json
 from django.dispatch import receiver
 from django.templatetags.static import static
 from django.utils.html import format_html
-from pretix.base.signals import (
-    order_placed,
-    order_valid_if_pending,
-    register_payment_providers,
+from pretix.base.signals import order_placed, register_payment_providers
+from pretix.presale.signals import (
+    html_head,
+    order_meta_from_request,
+    process_response,
 )
-from pretix.presale.signals import html_head, order_meta_from_request
 
 from .payment import (
     IDENTIFIER,
     META_KEY,
     SESSION_KEY,
     ExternalVoucherPayment,
-    apply_deadline_and_validity,
+    confirm_unpaid,
 )
 
 
@@ -35,15 +36,11 @@ def order_meta(sender, request, **kwargs):
     return {}
 
 
-@receiver(order_valid_if_pending, dispatch_uid="external_voucher_valid_if_pending")
-def valid_if_pending(sender, payments, **kwargs):
-    return any(p.get("provider") == IDENTIFIER for p in payments or [])
-
-
 @receiver(order_placed, dispatch_uid="external_voucher_order_placed")
 def order_placed_receiver(sender, order, **kwargs):
-    # Runs before the order confirmation mail is sent, so the mail already shows
-    # the extended payment deadline.
+    # Runs before the order confirmation mail is sent, so the mail already reflects
+    # the extended payment deadline and the "valid if pending" state. Orders that
+    # require approval get no payment yet and are therefore not touched.
     payments = [p for p in order.payments.all() if p.provider == IDENTIFIER]
     if not payments:
         return
@@ -56,14 +53,40 @@ def order_placed_receiver(sender, order, **kwargs):
             info.setdefault("question", provider.question)
         p.info_data = info
         p.save(update_fields=["info"])
-    apply_deadline_and_validity(order)
+    confirm_unpaid(order)
 
 
 @receiver(html_head, dispatch_uid="external_voucher_html_head")
 def hide_voucher_redemption(sender, request=None, **kwargs):
     # Only hides the "Redeem a voucher" box and cart toggle. Voucher links
-    # (/redeem?voucher=...) keep working.
+    # (/redeem?voucher=...) keep working. The script is a fallback for browsers
+    # without CSS :has() support.
     return format_html(
-        '<link rel="stylesheet" type="text/css" href="{}">',
+        '<link rel="stylesheet" type="text/css" href="{}">'
+        '<script type="text/javascript" src="{}" defer></script>',
         static("pretix_external_vouchers/hide_vouchers.css"),
+        static("pretix_external_vouchers/hide_vouchers.js"),
     )
+
+
+@receiver(process_response, dispatch_uid="external_voucher_widget")
+def hide_widget_voucher_field(sender, request, response, **kwargs):
+    # The embeddable widget only shows its voucher input if the product list says
+    # that vouchers exist. Vouchers passed via the widget's data-voucher attribute
+    # do not depend on this flag and keep working.
+    match = getattr(request, "resolver_match", None)
+    if (
+        not match
+        or match.url_name != "event.widget.productlist"
+        or response.status_code != 200
+        or not response.get("Content-Type", "").startswith("application/json")
+    ):
+        return response
+    try:
+        data = json.loads(response.content)
+    except ValueError:
+        return response
+    if isinstance(data, dict) and data.get("vouchers_exist"):
+        data["vouchers_exist"] = False
+        response.content = json.dumps(data)
+    return response
