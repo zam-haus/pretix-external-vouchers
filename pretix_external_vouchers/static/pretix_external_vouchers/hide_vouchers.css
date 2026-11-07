@@ -1,0 +1,7 @@
+/* Hide pretix' built-in "Redeem a voucher" UI. Voucher links keep working. */
+aside[aria-labelledby="redeem-a-voucher"] {
+    display: none !important;
+}
+.toggle-container:has(form[action$="/cart/voucher"]) {
+    display: none !important;
+}

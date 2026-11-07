@@ -1,0 +1,5 @@
+[plugin]
+package = "pretix-external-vouchers"
+modules = [ "pretix_external_vouchers" ]
+marketplace_name = "external-vouchers"
+

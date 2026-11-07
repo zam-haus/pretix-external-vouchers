@@ -1,0 +1,36 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2017-03-07 19:01+0100\n"
+"PO-Revision-Date: \n"
+"Last-Translator: Julian Hammer\n"
+"Language-Team: \n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "External Vouchers"
+msgstr "Externe Gutscheine"
+
+msgid "Payment method for external vouchers: asks a question during checkout, records the answer on the payment, extends the payment deadline until the end of the event and marks the order as valid before payment. Also hides the built-in 'Redeem a voucher' box."
+msgstr "Zahlungsart für externe Gutscheine: stellt beim Bezahlvorgang eine Frage, speichert die Antwort an der Zahlung, verlängert die Zahlungsfrist bis zum Ende der Veranstaltung und markiert die Bestellung schon vor der Zahlung als gültig. Blendet außerdem das eingebaute Feld „Gutschein einlösen“ aus."
+
+msgid "External voucher"
+msgstr "Externer Gutschein"
+
+msgid "Voucher code"
+msgstr "Gutscheincode"
+
+msgid "Question asked during checkout"
+msgstr "Frage beim Bezahlvorgang"
+
+msgid "For example: 'Please enter your voucher code'. The answer will be stored with the payment."
+msgstr "Zum Beispiel: „Bitte gib deinen Gutscheincode ein“. Die Antwort wird an der Zahlung gespeichert."
+
+msgid "Help text for the question"
+msgstr "Hilfetext zur Frage"
+
+msgid "Answer is required"
+msgstr "Antwort ist erforderlich"

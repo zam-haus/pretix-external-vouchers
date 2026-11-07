@@ -1,0 +1,42 @@
+[project]
+name = "pretix-external-vouchers"
+dynamic = ["version"]
+description = "pretix payment method for external vouchers: records an answer, extends the deadline until the event ends and marks orders valid before payment"
+readme = "README.rst"
+license = {text = "Apache"}
+keywords = ["pretix"]
+authors = [
+    {name = "Julian Hammer", email = "julian.hammer@betreiberverein.de"},
+]
+maintainers = [
+    {name = "Julian Hammer", email = "julian.hammer@betreiberverein.de"},
+]
+
+dependencies = [
+]
+
+[project.entry-points."pretix.plugin"]
+pretix_external_vouchers = "pretix_external_vouchers:PretixPluginMeta"
+
+[project.entry-points."distutils.commands"]
+build = "pretix_plugin_build.build:CustomBuild"
+
+[build-system]
+requires = [
+    "setuptools",
+    "pretix-plugin-build",
+]
+
+[project.urls]
+homepage = "https://github.com/zam-haus/pretix-external-vouchers"
+repository = "https://github.com/zam-haus/pretix-external-vouchers"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "pretix_external_vouchers.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["pretix_external_vouchers*"]
+namespaces = false
